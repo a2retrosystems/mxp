@@ -1,0 +1,6 @@
+*.o
+*.lib
+*.map
+*.bin
+*.sys
+*.dsk
