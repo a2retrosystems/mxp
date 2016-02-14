@@ -12,5 +12,8 @@ w5100_demo.dsk: udp.bin tcp.bin stream.bin
 	java -jar $(AC) -cc65 $@ tcp    bin < tcp.bin
 	java -jar $(AC) -cc65 $@ stream bin < stream.bin
 
+%.exe: %.c
+	cl /Fe:$@ $^
+
 clean:
-	-rm -f *.o *.map *.bin w5100_demo.dsk
+	-rm -f *.o *.map *.bin w5100_demo.dsk *.obj *.exe
