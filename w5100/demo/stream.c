@@ -36,29 +36,29 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
-static volatile byte* w5100_mode;
-static volatile byte* w5100_addr_hi;
-static volatile byte* w5100_addr_lo;
-       volatile byte* w5100_data;
+static volatile byte* stream_mode;
+static volatile byte* stream_addr_hi;
+static volatile byte* stream_addr_lo;
+       volatile byte* stream_data;
 
 static void set_addr(word addr)
 {
-  *w5100_addr_hi = addr >> 8;
-  *w5100_addr_lo = addr;
+  *stream_addr_hi = addr >> 8;
+  *stream_addr_lo = addr;
 }
 
 static byte get_byte(word addr)
 {
   set_addr(addr);
 
-  return *w5100_data;
+  return *stream_data;
 }
 
 static void set_byte(word addr, byte data)
 {
   set_addr(addr);
 
-  *w5100_data = data;
+  *stream_data = data;
 }
 
 static word get_word(word addr)
@@ -68,8 +68,8 @@ static word get_word(word addr)
   {
     // The variables are necessary to have cc65 generate code
     // suitable to access the W5100 auto-increment registers.
-    byte data_hi = *w5100_data;
-    byte data_lo = *w5100_data;
+    byte data_hi = *stream_data;
+    byte data_lo = *stream_data;
     return data_hi << 8 | data_lo;
   }
 }
@@ -83,8 +83,8 @@ static void set_word(word addr, word data)
     // suitable to access the W5100 auto-increment registers.
     byte data_hi = data >> 8;
     byte data_lo = data;
-    *w5100_data = data_hi;
-    *w5100_data = data_lo;
+    *stream_data = data_hi;
+    *stream_data = data_lo;
   }
 }
 
@@ -95,45 +95,50 @@ static void set_bytes(word addr, byte data[], word size)
   {
     word i;
     for (i = 0; i < size; ++i)
-      *w5100_data = data[i];
+      *stream_data = data[i];
   }
 }
 
-byte w5100_init(word base_addr, byte *ip_addr,
-                                byte *submask,
-                                byte *gateway)
+byte stream_init(word base_addr, byte *ip_addr,
+                                 byte *submask,
+                                 byte *gateway)
 {
-  w5100_mode    = (byte*)base_addr;
-  w5100_addr_hi = (byte*)base_addr + 1;
-  w5100_addr_lo = (byte*)base_addr + 2;
-  w5100_data    = (byte*)base_addr + 3;
+  stream_mode    = (byte*)base_addr;
+  stream_addr_hi = (byte*)base_addr + 1;
+  stream_addr_lo = (byte*)base_addr + 2;
+  stream_data    = (byte*)base_addr + 3;
 
   // Assert Indirect Bus I/F mode & Address Auto-Increment
-  *w5100_mode |= 0x03;
+  *stream_mode |= 0x03;
 
   // Retry Time-value Register: Default ?
   if (get_word(0x0017) != 2000)
     return 0;
 
-  // S/W Reset
-  *w5100_mode = 0x80;
-  while (*w5100_mode & 0x80)
-    ;
-
-  // Indirect Bus I/F mode & Address Auto-Increment
-  *w5100_mode = 0x03;
-
-  // RX Memory Size Register: Assign 8KB to Socket 0
-   set_byte(0x001A, 0x03);
-
-  // TX Memory Size Register: Assign 8KB to Socket 0
-   set_byte(0x001B, 0x03);
-
-  // Source Hardware Address Register
+  // Check for W5100 shared access
+  // RX Memory Size Register: Assign 4+2+1+1KB to Socket 0 to 3 ?
+  if (get_byte(0x001A) != 0x06)
   {
-    static byte mac_addr[6] = {0x00, 0x08, 0xDC, // OUI of WIZnet
-                               0x11, 0x11, 0x11};
-    set_bytes(0x0009, mac_addr, sizeof(mac_addr));
+    // S/W Reset
+    *stream_mode = 0x80;
+    while (*stream_mode & 0x80)
+      ;
+
+    // Indirect Bus I/F mode & Address Auto-Increment
+    *stream_mode = 0x03;
+
+    // RX Memory Size Register: Assign 4KB each to Socket 0 and 1
+     set_byte(0x001A, 0x0A);
+
+    // TX Memory Size Register: Assign 4KB each to Socket 0 and 1
+     set_byte(0x001B, 0x0A);
+
+    // Source Hardware Address Register
+    {
+      static byte mac_addr[6] = {0x00, 0x08, 0xDC, // OUI of WIZnet
+                                 0x11, 0x11, 0x11};
+      set_bytes(0x0009, mac_addr, sizeof(mac_addr));
+    }
   }
 
   // Source IP Address Register
@@ -148,7 +153,7 @@ byte w5100_init(word base_addr, byte *ip_addr,
   return 1;
 }
 
-byte w5100_connect(byte *server_addr, word server_port)
+byte stream_connect(byte *server_addr, word server_port)
 {
   // Socket 0 Mode Register: TCP
   set_byte(0x0400, 0x01);
@@ -183,13 +188,13 @@ byte w5100_connect(byte *server_addr, word server_port)
   }
 }
 
-byte w5100_connected(void)
+byte stream_connected(void)
 {
   // Socket 0 Status Register: SOCK_ESTABLISHED ?
   return get_byte(0x0403) == 0x17;
 }
 
-void w5100_disconnect(void)
+void stream_disconnect(void)
 {
   // Socket 0 Command Register: Command Pending ?
   while (get_byte(0x0401))
@@ -204,19 +209,20 @@ void w5100_disconnect(void)
     ;
 }
 
-word w5100_data_request(byte do_send)
+word stream_data_request(byte do_send)
 {
   // Socket 0 Command Register: Command Pending ?
   if (get_byte(0x0401))
     return 0;
 
-  // Reread of nonzero RX Received Size Register / TX Free Size Register
-  // until its value settles ...
-  // - is present in the WIZnet driver - getSn_RX_RSR() / getSn_TX_FSR()
-  // - was additionally tested on 6502 machines to be actually necessary
   {
     word size = 0;
     word prev_size;
+
+    // Reread of nonzero RX Received Size Register / TX Free Size Register
+    // until its value settles ...
+    // - is present in the WIZnet driver - getSn_RX_RSR() / getSn_TX_FSR()
+    // - was additionally tested on 6502 machines to be actually necessary
     do
     {
       prev_size = size;
@@ -238,14 +244,14 @@ word w5100_data_request(byte do_send)
       static word bas[2] = {0x6000,  // Socket 0 RX Memory Base
                             0x4000}; // Socket 0 TX Memory Base
 
-      static word lim[2] = {0x8000,  // Socket 0 RX Memory Limit
-                            0x6000}; // Socket 0 TX Memory Limit
+      static word lim[2] = {0x7000,  // Socket 0 RX Memory Limit
+                            0x5000}; // Socket 0 TX Memory Limit
 
       // Calculate and set physical address
-      word addr = get_word(reg[do_send]) & 0x1FFF | bas[do_send];
+      word addr = get_word(reg[do_send]) & 0x0FFF | bas[do_send];
       set_addr(addr);
 
-      // Access to *w5100_data is limited both by ...
+      // Access to *stream_data is limited both by ...
       // - size of received / free space
       // - end of physical address space
       return MIN(size, lim[do_send] - addr);
@@ -253,7 +259,7 @@ word w5100_data_request(byte do_send)
   }
 }
 
-void w5100_data_commit(byte do_send, word size)
+void stream_data_commit(byte do_send, word size)
 {
   {
     static word reg[2] = {0x0428,  // Socket 0 RX Read  Pointer Register

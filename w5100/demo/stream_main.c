@@ -14,7 +14,7 @@ byte ip_addr[4] = {192, 168,   0, 123};
 byte submask[4] = {255, 255, 255,   0};
 byte gateway[4] = {192, 168,   0,   1};
 
-byte server[4] = {192, 168, 0, 2}; // IP addr of machine running w5100_peer.c
+byte server[4] = {192, 168, 0, 2}; // IP addr of machine running peer.c
 
 void main(void)
 {
@@ -22,15 +22,15 @@ void main(void)
 
   videomode(VIDEOMODE_80COL);
   printf("Init\n");
-  if (!w5100_init(0xC0B4, ip_addr,
-                          submask,
-                          gateway))
+  if (!stream_init(0xC0B4, ip_addr,
+                           submask,
+                           gateway))
   {
     printf("No Hardware Found\n");
     return;
   }
   printf("Connect\n");
-  if (!w5100_connect(server, 6502))
+  if (!stream_connect(server, 6502))
   {
     printf("Faild To Connect To %d.%d.%d.%d\n", server[0],
                                                 server[1],
@@ -43,7 +43,7 @@ void main(void)
                                        server[2],
                                        server[3]);
 
-  printf("(S)end or e(X)it\n");
+  printf("(T)CP or e(X)it\n");
   do
   {
     word len, all;
@@ -57,7 +57,7 @@ void main(void)
       key = '\0';
     }
 
-    if (key == 's')
+    if (key == 't')
     {
       all = 500;
       printf("Send Len %d", all);
@@ -65,23 +65,23 @@ void main(void)
       {
         word i;
 
-        while (!(len = w5100_send_request()))
+        while (!(len = stream_send_request()))
         {
           printf("!");
         }
         len = MIN(all, len);
         for (i = 0; i < len; ++i)
         {
-          *w5100_data = 500 - all + i;
+          *stream_data = 500 - all + i;
         }
-        w5100_send_commit(len);
+        stream_send_commit(len);
         all -= len;
       }
       while (all);
       printf(".\n");
     }
 
-    len = w5100_receive_request();
+    len = stream_receive_request();
     if (len)
     {
       word i;
@@ -93,13 +93,13 @@ void main(void)
         {
           printf("\n$%04X:", i);
         }
-        printf(" %02X", *w5100_data);
+        printf(" %02X", *stream_data);
       }
-      w5100_receive_commit(len);
+      stream_receive_commit(len);
       printf(".\n");
     }
 
-    if (!w5100_connected())
+    if (!stream_connected())
     {
       printf("Disconnect\n");
       return;
@@ -107,6 +107,6 @@ void main(void)
   }
   while (key != 'x');
 
-  w5100_disconnect();
+  stream_disconnect();
   printf("Done\n");
 }

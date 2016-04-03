@@ -33,51 +33,51 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 typedef unsigned char  byte;
 typedef unsigned short word;
 
-word w5100_data_request(byte do_send);
-void w5100_data_commit(byte do_send, word size);
+word stream_data_request(byte do_send);
+void stream_data_commit(byte do_send, word size);
 
-// After w5100_receive_request() every read operation returns the next byte
+// After stream_receive_request() every read operation returns the next byte
 // from the server.
-// After w5100_send_request() every write operation prepares the next byte
+// After stream_send_request() every write operation prepares the next byte
 // to be sent to the server.
-extern volatile byte* w5100_data;
+extern volatile byte* stream_data;
 
 // Initialize W5100 Ethernet controller with indirect bus interface located
 // at <base_addr>. Use <ip_addr>, <submask> and <gateway> to configure the
 // TCP/IP stack.
 // Return <1> if a W5100 was found at <base_addr>, return <0> otherwise.
-byte w5100_init(word base_addr, byte *ip_addr,
-                                byte *submask,
-                                byte *gateway);
+byte stream_init(word base_addr, byte *ip_addr,
+                                 byte *submask,
+                                 byte *gateway);
 
 // Connect to server with IP address <server_addr> on TCP port <server_port>.
 // Use <6502> as fixed local port.
 // Return <1> if the connection is established, return <0> otherwise.
-byte w5100_connect(byte *server_addr, word server_port);
+byte stream_connect(byte *server_addr, word server_port);
 
 // Check if still connected to server.
 // Return <1> if the connection is established, return <0> otherwise.
-byte w5100_connected(void);
+byte stream_connected(void);
 
 // Disconnect from server.
-void w5100_disconnect(void);
+void stream_disconnect(void);
 
 // Request to receive data from the server.
-// Return maximum number of bytes to be received by reading from *w5100_data.
-#define w5100_receive_request() w5100_data_request(0)
+// Return maximum number of bytes to be received by reading from *stream_data.
+#define stream_receive_request() stream_data_request(0)
 
 // Commit receiving of <size> bytes from server. <size> may be smaller than
-// the return value of w5100_receive_request(). Not commiting at all just
+// the return value of stream_receive_request(). Not commiting at all just
 // makes the next request receive the same data again.
-#define w5100_receive_commit(size) w5100_data_commit(0, (size))
+#define stream_receive_commit(size) stream_data_commit(0, (size))
 
 // Request to send data to the server.
-// Return maximum number of bytes to be send by writing to *w5100_data.
-#define w5100_send_request() w5100_data_request(1)
+// Return maximum number of bytes to be send by writing to *stream_data.
+#define stream_send_request() stream_data_request(1)
 
 // Commit sending of <size> bytes to server. <size> is usually smaller than
-// the return value of w5100_send_request(). Not commiting at all just turns
-// the w5100_send_request() - and the writes to *w5100_data - into NOPs.
-#define w5100_send_commit(size) w5100_data_commit(1, (size))
+// the return value of stream_send_request(). Not commiting at all just turns
+// the stream_send_request() - and the writes to *stream_data - into NOPs.
+#define stream_send_commit(size) stream_data_commit(1, (size))
 
 #endif
