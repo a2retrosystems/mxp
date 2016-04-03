@@ -1,15 +1,15 @@
 #include <stdio.h>
 #include <conio.h>
 
-void __fastcall__ w5100_init(void *parms);
+void __fastcall__ udp_init(void *parms);
 
-unsigned int  w5100_recv_init(void);
-unsigned char w5100_recv_byte(void);
-void          w5100_recv_done(void);
+unsigned int  udp_recv_init(void);
+unsigned char udp_recv_byte(void);
+void          udp_recv_done(void);
 
-unsigned char __fastcall__ w5100_send_init(unsigned int  len);
-void          __fastcall__ w5100_send_byte(unsigned char val);
-void                       w5100_send_done(void);
+unsigned char __fastcall__ udp_send_init(unsigned int  len);
+void          __fastcall__ udp_send_byte(unsigned char val);
+void                       udp_send_done(void);
 
 struct
 {
@@ -20,7 +20,7 @@ struct
 }
 parms =
 {
-  {192, 168,   0,   2}, // IP addr of machine running w5100_peer.c
+  {192, 168,   0,   2}, // IP addr of machine running peer.c
   {192, 168,   0, 123},
   {255, 255, 255,   0},
   {192, 168,   0,   1}
@@ -32,9 +32,9 @@ void main(void)
 
   videomode(VIDEOMODE_80COL);
   printf("Init\n");
-  w5100_init(&parms);
+  udp_init(&parms);
 
-  printf("(S)end or e(X)it\n");
+  printf("(U)DP or e(X)it\n");
   do
   {
     unsigned len;
@@ -48,7 +48,7 @@ void main(void)
       key = '\0';
     }
 
-    if (key == 's')
+    if (key == 'u')
     {
       unsigned i;
 
@@ -57,19 +57,19 @@ void main(void)
                                                 parms.serverip[1],
                                                 parms.serverip[2],
                                                 parms.serverip[3]);
-      while (!w5100_send_init(len))
+      while (!udp_send_init(len))
       {
         printf("!");
       }
       for (i = 0; i < len; ++i)
       {
-        w5100_send_byte(i);
+        udp_send_byte(i);
       }
-      w5100_send_done();
+      udp_send_done();
       printf(".\n");
     }
 
-    len = w5100_recv_init();
+    len = udp_recv_init();
     if (len)
     {
       unsigned i;
@@ -84,9 +84,9 @@ void main(void)
         {
           printf("\n$%04X:", i);
         }
-        printf(" %02X", w5100_recv_byte());
+        printf(" %02X", udp_recv_byte());
       }
-      w5100_recv_done();
+      udp_recv_done();
       printf(".\n");
     }
   }

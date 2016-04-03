@@ -1,16 +1,16 @@
 #include <stdio.h>
 #include <conio.h>
 
-unsigned char __fastcall__ w5100_init(void *parms);
-void                       w5100_done(void);
+unsigned char __fastcall__ tcp_init(void *parms);
+void                       tcp_done(void);
 
-int           w5100_recv_init(void);
-unsigned char w5100_recv_byte(void);
-void          w5100_recv_done(void);
+int           tcp_recv_init(void);
+unsigned char tcp_recv_byte(void);
+void          tcp_recv_done(void);
 
-unsigned char __fastcall__ w5100_send_init(unsigned int  len);
-void          __fastcall__ w5100_send_byte(unsigned char val);
-void                       w5100_send_done(void);
+unsigned char __fastcall__ tcp_send_init(unsigned int  len);
+void          __fastcall__ tcp_send_byte(unsigned char val);
+void                       tcp_send_done(void);
 
 struct
 {
@@ -21,7 +21,7 @@ struct
 }
 parms =
 {
-  {192, 168,   0,   2}, // IP addr of machine running w5100_peer.c
+  {192, 168,   0,   2}, // IP addr of machine running peer.c
   {192, 168,   0, 123},
   {255, 255, 255,   0},
   {192, 168,   0,   1}
@@ -33,7 +33,7 @@ void main(void)
 
   videomode(VIDEOMODE_80COL);
   printf("Init\n");
-  if (!w5100_init(&parms))
+  if (!tcp_init(&parms))
   {
     printf("Faild To Connect To %d.%d.%d.%d\n", parms.serverip[0],
                                                 parms.serverip[1],
@@ -46,7 +46,7 @@ void main(void)
                                        parms.serverip[2],
                                        parms.serverip[3]);
 
-  printf("(S)end or e(X)it\n");
+  printf("(T)CP or e(X)it\n");
   do
   {
     unsigned len;
@@ -60,25 +60,25 @@ void main(void)
       key = '\0';
     }
 
-    if (key == 's')
+    if (key == 't')
     {
       unsigned i;
 
       len = 500;
       printf("Send Len %d", len);
-      while (!w5100_send_init(len))
+      while (!tcp_send_init(len))
       {
         printf("!");
       }
       for (i = 0; i < len; ++i)
       {
-        w5100_send_byte(i);
+        tcp_send_byte(i);
       }
-      w5100_send_done();
+      tcp_send_done();
       printf(".\n");
     }
 
-    len = w5100_recv_init();
+    len = tcp_recv_init();
     if (len == -1)
     {
       printf("Disconnect\n");
@@ -95,14 +95,14 @@ void main(void)
         {
           printf("\n$%04X:", i);
         }
-        printf(" %02X", w5100_recv_byte());
+        printf(" %02X", tcp_recv_byte());
       }
-      w5100_recv_done();
+      tcp_recv_done();
       printf(".\n");
     }
   }
   while (key != 'x');
 
-  w5100_done();
+  tcp_done();
   printf("Done\n");
 }

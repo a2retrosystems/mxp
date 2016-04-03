@@ -29,16 +29,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
 
-.export _w5100_init
-.export _w5100_recv_init, _w5100_recv_byte, _w5100_recv_done
-.export _w5100_send_init, _w5100_send_byte, _w5100_send_done
+.export _udp_init
+.export _udp_recv_init, _udp_recv_byte, _udp_recv_done
+.export _udp_send_init, _udp_send_byte, _udp_send_done
 
 ptr  := $06         ; 2 byte pointer value
 sha  := $08         ; 2 byte physical addr shadow ($F000-$FFFF)
 adv  := $EB         ; 2 byte pointer register advancement
 len  := $ED         ; 2 byte frame length
 tmp  := $FA         ; 1 byte temporary value
-bas  := $FB         ; 1 byte socket 1 Base Address (hibyte)
+bas  := $FB         ; 1 byte socket 3 Base Address (hibyte)
 
 mode := $C0B4
 addr := $C0B5
@@ -46,7 +46,7 @@ data := $C0B7
 
 ;------------------------------------------------------------------------------
 
-_w5100_init:
+_udp_init:
 ; Input
 ;       AX: Address of ip_parms (serverip, cfg_ip, cfg_netmask, cfg_gateway)
 ; Output
@@ -94,43 +94,43 @@ _w5100_init:
         ldy #1*4                ; ip_parms::cfg_ip
         jsr set_ipv4value
 
-        ; RX Memory Size Register: Assign 4KB each to sockets 0 and 1
+        ; RX Memory Size Register: Assign 4+2+1+1KB to socket 0 to 3
         ldx #$00                ; Hibyte
         ldy #$1A                ; Lobyte
         jsr set_addr
-        lda #$0A
+        lda #$06
         sta data
 
-        ; TX Memory Size Register: Assign 4KB each to sockets 0 and 1
+        ; TX Memory Size Register: Assign 4+2+1+1KB to socket 0 to 3
         ; -> addr is already set
-        ; -> A is still $0A
+        ; -> A is still $06
         sta data
 
-        ; Socket 1 Source Port Register: 6502
+        ; Socket 3 Source Port Register: 6502
         ldy #$04
-        jsr set_addrsocket1
+        jsr set_addrsocket3
         jsr set_data6502
 
-        ; Socket 1 Destination IP Address Register: Destination IP address
+        ; Socket 3 Destination IP Address Register: Destination IP address
         ; This has to be the last call to set_ipv4value because it writes
         ; as a side effect to 'hdr' and it is the destination IP address
         ; that has to be present in 'hdr' after initialization
         ldy #$0C
-        jsr set_addrsocket1
+        jsr set_addrsocket3
         ldy #0*4                ; ip_parms::serverip
         jsr set_ipv4value
 
-        ; Socket 1 Destination Port Register: 6502
+        ; Socket 3 Destination Port Register: 6502
         ; -> addr is already set
         jsr set_data6502
 
-        ; Socket 1 Mode Register: UDP
+        ; Socket 3 Mode Register: UDP
         ldy #$00
-        jsr set_addrsocket1
+        jsr set_addrsocket3
         lda #$02
         sta data
 
-        ; Socket 1 Command Register: OPEN
+        ; Socket 3 Command Register: OPEN
         ; -> addr is already set
         lda #$01
         sta data
@@ -159,7 +159,7 @@ set_data6502:
 
 ;------------------------------------------------------------------------------
 
-_w5100_recv_init:
+_udp_recv_init:
 ; Input
 ;       None
 ; Output
@@ -167,16 +167,16 @@ _w5100_recv_init:
 ; Remark
 ;       To be called before recv_byte.
 
-        ; Socket 1 RX Received Size Register: 0 or volatile ?
+        ; Socket 3 RX Received Size Register: 0 or volatile ?
         lda #$26                ; Socket RX Received Size Register
         jsr prolog
         bne error
 
-        ; Socket 1 RX Read Pointer Register
+        ; Socket 3 RX Read Pointer Register
         ; -> addr already set
 
         ; Calculate and set pyhsical address
-        ldx #>$7000             ; Socket 1 RX Base Address
+        ldx #>$7C00             ; Socket 3 RX Base Address
         jsr set_addrphysical
 
         ; Compare peer IP addr and peer port with expected values
@@ -184,7 +184,7 @@ _w5100_recv_init:
         clc
         ldx #$05
         stx tmp
-:       jsr _w5100_recv_byte    ; Doesn't trash C
+:       jsr _udp_recv_byte      ; Doesn't trash C
         ldx tmp
         eor hdr,x               ; Doesn't trash C
         beq :+
@@ -194,9 +194,9 @@ _w5100_recv_init:
         php                     ; Save C
 
         ; Read data length
-        jsr _w5100_recv_byte    ; Hibyte
+        jsr _udp_recv_byte      ; Hibyte
         sta len+1
-        jsr _w5100_recv_byte    ; Lobyte
+        jsr _udp_recv_byte      ; Lobyte
         sta len
 
         ; Add 8 byte header to set pointer advancement
@@ -210,7 +210,7 @@ _w5100_recv_init:
         ; Skip frame if it doesn't originate from our
         ; expected communicaion peer
         plp                     ; Restore C
-        bcs _w5100_recv_done
+        bcs _udp_recv_done
 
         ; Return data length
         lda len
@@ -219,7 +219,7 @@ _w5100_recv_init:
 
 ;------------------------------------------------------------------------------
 
-_w5100_send_init:
+_udp_send_init:
 ; Input
 ;       AX: Number of bytes to send
 ; Output
@@ -231,22 +231,22 @@ _w5100_send_init:
         sta adv
         stx adv+1
 
-        ; Socket 1 TX Free Size Register: 0 or volatile ?
+        ; Socket 3 TX Free Size Register: 0 or volatile ?
         lda #$20                ; Socket TX Free Size Register
         jsr prolog
         bne error
 
-        ; Socket 1 TX Free Size Register: < advancement ?
+        ; Socket 3 TX Free Size Register: < advancement ?
         cpx adv                 ; Lobyte
         sbc adv+1               ; Hibyte
         bcc error               ; Not enough free size
 
-        ; Socket 1 TX Write Pointer Register
+        ; Socket 3 TX Write Pointer Register
         ldy #$24
-        jsr set_addrsocket1
+        jsr set_addrsocket3
 
         ; Calculate and set pyhsical address
-        ldx #>$5000             ; Socket 1 TX Base Address
+        ldx #>$5C00             ; Socket 3 TX Base Address
         jsr set_addrphysical
 
         ; Return success
@@ -265,14 +265,14 @@ error:
 
 prolog:
         ; Check for completion of previous command
-        ; Socket 1 Command Register: 0 ?
-        jsr set_addrcmdreg1
+        ; Socket 3 Command Register: 0 ?
+        jsr set_addrcmdreg3
         ldx data
         bne :++                 ; Not completed -> Z = 0
 
         ; Socket Size Register: not 0 ?
         tay                     ; Select Size Register
-        jsr get_wordsocket1
+        jsr get_wordsocket3
         stx ptr                 ; Lobyte
         sta ptr+1               ; Hibyte
         ora ptr
@@ -281,7 +281,7 @@ prolog:
         rts
 
         ; Socket Size Register: volatile ?
-:       jsr get_wordsocket1
+:       jsr get_wordsocket3
         cpx ptr                 ; Lobyte
         bne :+                  ; Volatile size -> Z = 0
         cmp ptr+1               ; Hibyte
@@ -290,7 +290,7 @@ prolog:
 
 ;------------------------------------------------------------------------------
 
-_w5100_recv_byte:
+_udp_recv_byte:
 ; Input
 ;       None
 ; Output
@@ -309,7 +309,7 @@ _w5100_recv_byte:
 
 ;------------------------------------------------------------------------------
 
-_w5100_send_byte:
+_udp_send_byte:
 ; Input
 ;       A: Byte to send
 ; Output
@@ -329,12 +329,12 @@ incsha:
         ; Increment physical addr shadow hibyte
         inc sha+1
         beq set_addrbase
-        ldx #>$0000             ; Required by cc65 C callers (_w5100_recv_byte)
+        ldx #>$0000             ; Required by cc65 C callers (_udp_recv_byte)
         rts
 
 ;------------------------------------------------------------------------------
 
-_w5100_recv_done:
+_udp_recv_done:
 ; Input
 ;       None
 ; Output
@@ -351,7 +351,7 @@ _w5100_recv_done:
 
 ;------------------------------------------------------------------------------
 
-_w5100_send_done:
+_udp_send_done:
 ; Input
 ;       None
 ; Output
@@ -367,7 +367,7 @@ _w5100_send_done:
 
 epilog:
         ; Advance pointer register
-        jsr set_addrsocket1
+        jsr set_addrsocket3
         tay                     ; Save command
         clc
         lda ptr
@@ -380,10 +380,10 @@ epilog:
 
         ; Set command register
         tya                     ; Restore command
-        jsr set_addrcmdreg1
+        jsr set_addrcmdreg3
         sta data
 
-        ; Return error (_w5100_recv_init)
+        ; Return error (_udp_recv_init)
         bne error               ; Always
 
 ;------------------------------------------------------------------------------
@@ -393,27 +393,27 @@ set_addrphysical:
         ldy data                ; Lobyte
         sty ptr
         sta ptr+1
-        and #>$0FFF             ; Socket Mask Address (hibyte)
+        and #>$03FF             ; Socket Mask Address (hibyte)
         stx bas                 ; Socket Base Address (hibyte)
         ora bas
         tax
-        ora #>$F000             ; Move sha/sha+1 to $F000-$FFFF
+        ora #>$FC00             ; Move sha/sha+1 to $FC00-$FFFF
         sty sha
         sta sha+1
 
 set_addr:
         stx addr                ; Hibyte
         sty addr+1              ; Lobyte
-        ldx #>$0000             ; Required by cc65 C callers (_w5100_recv_byte)
+        ldx #>$0000             ; Required by cc65 C callers (_udp_recv_byte)
         rts
 
 ;------------------------------------------------------------------------------
 
-set_addrcmdreg1:
+set_addrcmdreg3:
         ldy #$01                ; Socket Command Register
 
-set_addrsocket1:
-        ldx #>$0500             ; Socket 1 register base address
+set_addrsocket3:
+        ldx #>$0700             ; Socket 3 register base address
         bne set_addr            ; Always
 
 ;------------------------------------------------------------------------------
@@ -425,8 +425,8 @@ set_addrbase:
 
 ;------------------------------------------------------------------------------
 
-get_wordsocket1:
-        jsr set_addrsocket1
+get_wordsocket3:
+        jsr set_addrsocket3
         lda data                ; Hibyte
         ldx data                ; Lobyte
         rts
