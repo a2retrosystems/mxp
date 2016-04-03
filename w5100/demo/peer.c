@@ -73,7 +73,7 @@ void main(void)
 
   SOCKET tcp = INVALID_SOCKET;
 
-  printf("(S)end or e(X)it\n");
+  printf("(U)DP, (T)CP or e(X)it\n");
   char key;
   do
   {
@@ -89,9 +89,9 @@ void main(void)
       key = '\0';
     }
 
-    if (key == 's')
+    if (key == 'u')
     {
-      if (remote.sin_addr.s_addr == INADDR_NONE && tcp == INVALID_SOCKET)
+      if (remote.sin_addr.s_addr == INADDR_NONE)
       {
         printf("Peer Unknown As Yet\n", len);
       }
@@ -104,21 +104,34 @@ void main(void)
         {
           buf[i] = i;
         }
-        if (tcp == INVALID_SOCKET)
+        printf("Send Len %d To %s", len, inet_ntoa(remote.sin_addr));
+        if (sendto(udp, buf, len, 0, (SOCKADDR *)&remote, sizeof(remote)) == SOCKET_ERROR)
         {
-          printf("Send Len %d To %s", len, inet_ntoa(remote.sin_addr));
-          if (sendto(udp, buf, len, 0, (SOCKADDR *)&remote, sizeof(remote)) == SOCKET_ERROR)
-          {
-            return;
-          }
+          return;
         }
-        else
+        printf(".\n");
+      }
+    }
+
+    if (key == 't')
+    {
+      if (tcp == INVALID_SOCKET)
+      {
+        printf("No Connection\n", len);
+      }
+      else
+      {
+        unsigned i;
+
+        len = 500;
+        for (i = 0; i < len; ++i)
         {
-          printf("Send Len %d", len);
-          if (send(tcp, buf, len, 0) == SOCKET_ERROR)
-          {
-            return;
-          }
+          buf[i] = i;
+        }
+        printf("Send Len %d", len);
+        if (send(tcp, buf, len, 0) == SOCKET_ERROR)
+        {
+          return;
         }
         printf(".\n");
       }
