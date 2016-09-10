@@ -36,6 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .import a2_set_slot
 .import dns_hostname_is_dotted_quad
 .import dns_ip
+.import dns_resolve
 .import dns_set_hostname
 .import get_key
 
@@ -51,6 +52,7 @@ devadr := $BF10
 devcnt := $BF31
 devlst := $BF32
 memtbl := $BF58
+speakr := $C030
 lc_ro  := $C088
 lc_wo  := $C089
 lc_off := $C08A
@@ -89,8 +91,8 @@ install_u2d:
 ; check for Uthernet II
   lda slot
   jsr a2_set_slot
-;  jsr ip65_init
-clc
+;jmp xxx
+  jsr ip65_init
   bcc :+
   lda #<dev_not_found_msg
   ldx #>dev_not_found_msg
@@ -102,14 +104,14 @@ clc
   jsr print_ascii_as_native
 
 ; get IP addr
-;  jsr dhcp_init
-clc
+  jsr dhcp_init
   bcc :+
   jmp ip65_exit
 : lda #<cfg_ip
   ldx #>cfg_ip
   jsr print_dotted_quad
 
+;xxx:
 ; check if server name needs to be resolved
   lda #<dummy
   ldx #>dummy
@@ -128,8 +130,7 @@ clc
   jsr print_ascii_as_native
 
 ; resolve server name
-;  jsr dns_resolve
-clc
+  jsr dns_resolve
   bcc :+
   jmp ip65_exit
 
@@ -573,21 +574,34 @@ quit:
 
 .segment "DRIVER"
 
-command = $42
-unitnum = $43
-buffer  = $44
-blknum  = $46
+; use same locations as used by Disk II driver
+preg_val := $3A                 ; 2 byte pointer register value
+addr_sha := $3C                 ; 2 byte physical addr shadow ($F000-$FFFF)
+checksum := $3E                 ; 1 byte XOR checksum
+adtp_cmd := $3F                 ; 1 byte ADTPro command
+
+command := $42
+unitnum := $43
+buffer  := $44
+blknum  := $46
 
 status = $00
 read   = $01
 write  = $02
 format = $03
 
+okay      = $00
+io_error  = $27
+no_device = $28
+writeprot = $2B
+
   cld                           ; necessary for LC setting detection
 u2d_marker:
   jmp udp_init
 
+
 driver:
+  jsr udp_check                 ; Check for RESET
   lda command
   cmp #read
   beq do_read
@@ -598,65 +612,240 @@ driver:
 ; 'status' nor 'format' so simply always pretend everything is just fine
   ldx #<$FFFF
   ldy #>$FFFF
-  lda #$00
+  lda #okay
   clc
   rts
 
 
 do_read:
-  lda buffer
-  ldx buffer+1
-  inx
-  sta $3A
-  stx $3A+1
-  ldy #$00
-  lda $46
-: sta (buffer),y
-  iny
-  bne :-
-  lda $47
-: sta ($3A),y
-  iny
-  bne :-
+; send 5 bytes
+  lda #<5
+  ldx #>5
+  jsr udp_send_init
+  bcs driver_error
+
+; send 'Read3' request
+  ldx #$03
+  jsr send_envelope
+
+; do it!
+  jsr udp_send_done
+  bcs :++                       ; always
+
+; skip "wrong" data
+: jsr udp_recv_done
+
+; receive 523 bytes
+: jsr udp_recv_init
+inc $400
+  bcs :-
+  cmp #<523
+  bne :--
+  cpx #>523
+  bne :--
+
+; receive 'Read3' response
+  ldx #$03
+  jsr recv_envelope
+  bne :--
+
+; reset checksum
+  lda #$00
+  sta checksum
+
+; receive first page
+  jsr udp_recv_page
+  inc buffer+1
+
+; receive second page
+  jsr udp_recv_page
+  dec buffer+1
+
+; receive checksum
+  jsr udp_recv_byte
+  cmp checksum
+  bne :--
+
+; response received
+  jsr udp_recv_done
+  bit speakr
+
+; return success
+  lda #okay
   clc
+  rts
+
+driver_error:
+  lda #io_error
+  sec
   rts
 
 
 do_write:
-  lda #$2B
-  sec
+; send 518 bytes
+  lda #<518
+  ldx #>518
+  jsr udp_send_init
+  bcs driver_error
+
+; send 'Write' request
+  ldx #$02
+  jsr send_envelope
+
+; reset checksum
+  lda #$00
+  sta checksum
+
+; send first page
+  jsr udp_send_page
+  inc buffer+1
+
+; send second page
+  jsr udp_send_page
+  dec buffer+1
+
+; send checksum
+  lda checksum
+  clc                           ; keep checksum
+  jsr udp_send_byte
+
+; do it!
+  jsr udp_send_done
+  bcs :++                       ; always
+
+; skip "wrong" data
+: jsr udp_recv_done
+
+; receive 6 bytes
+: jsr udp_recv_init
+inc $401
+  bcs :-
+  cmp #<6
+  bne :--
+  cpx #>6
+  bne :--
+
+; receive 'Write' response
+  ldx #$02
+  jsr recv_envelope
+  bne :--
+
+; response received
+  jsr udp_recv_done
+  bit speakr
+
+; return success
+  lda #okay
+  clc
+  rts
+
+
+recv_envelope:
+; recv packet number
+  jsr udp_recv_byte
+  cmp prev_pnum
+  beq :+++
+  sta prev_pnum
+
+; recv 'E'
+  jsr udp_recv_byte
+  cmp #$C5
+  bne :+++
+
+; recv ADTPro command
+  jsr udp_recv_byte
+  cmp adtp_cmd
+  bne :+++
+
+; recv block number
+  jsr udp_recv_byte
+  cmp blknum
+  bne :+++
+  jsr udp_recv_byte
+  cmp blknum+1
+  bne :+++
+
+; recv date/time if 'Read3'
+  cpx #$03
+  bne :++
+: jsr udp_recv_byte
+  sta date_time,x
+  eor checksum
+  sta checksum
+  dex
+  bpl :-
+
+; recv checksum and return
+: jsr udp_recv_byte
+  cmp checksum
+: rts
+
+
+send_envelope:
+; reset checksum
+  lda #$00
+  sta checksum
+
+; send 'E'
+  lda #$C5
+  sec                           ; update checksum
+  jsr udp_send_byte
+
+; send ADTPro command
+  lda unitnum
+  asl
+  txa
+  bcc :+
+  adc #$01
+: sta adtp_cmd
+  sec                           ; update checksum
+  jsr udp_send_byte
+
+; send block number
+  lda blknum
+  sec                           ; update checksum
+  jsr udp_send_byte
+  lda blknum+1
+  sec                           ; update checksum
+  jsr udp_send_byte
+
+; send checksum and return
+  lda checksum
+  clc                           ; keep checksum
+  jsr udp_send_byte
   rts
 
 ;------------------------------------------------------------------------------
 
 .segment "DRIVER"
 
-ptr  := $06         ; 2 byte pointer value
-sha  := $08         ; 2 byte physical addr shadow ($F000-$FFFF)
-adv  := $EB         ; 2 byte pointer register advancement
-len  := $ED         ; 2 byte frame length
-tmp  := $FA         ; 1 byte temporary value
-bas  := $FB         ; 1 byte socket 3 Base Address (hibyte)
-
 ; fixed up at runtime
-mode := $C000
-addr := $C001
-data := $C003
+w5100_mode := $C000
+w5100_addr := $C001
+w5100_data := $C003
 
+
+udp_check:
+; Indirect Bus I/F Mode, Address Auto-Increment ?
+fixup01:
+  lda w5100_mode
+  cmp #$03
+  bne udp_init
+  rts
 
 udp_init:
 ; S/W Reset
   lda #$80
-fixup01:
-  sta mode
 fixup02:
-: lda mode
+  sta w5100_mode
+fixup03:
+: lda w5100_mode
   bmi :-
 
-; Indirect Bus I/F mode, Address Auto-Increment
+; Indirect Bus I/F Mode, Address Auto-Increment
   lda #$03
-fixup03:
-  sta mode
+fixup04:
+  sta w5100_mode
 
 ; Gateway IP Address Register: IP address of router on local network
   ldx #$00                      ; hibyte
@@ -674,8 +863,8 @@ fixup03:
 ; -> addr is already set
   ldx #$00
 : lda udp_mac,x
-fixup04:
-  sta data
+fixup05:
+  sta w5100_data
   inx
   cpx #$06
   bcc :-
@@ -690,14 +879,14 @@ fixup04:
   ldy #$1A                      ; lobyte
   jsr set_addr
   lda #$06
-fixup05:
-  sta data
+fixup06:
+  sta w5100_data
 
 ; TX Memory Size Register: Assign 4+2+1+1KB to socket 0 to 3
 ; -> addr is already set
 ; -> A is still $06
-fixup06:
-  sta data
+fixup07:
+  sta w5100_data
 
 ; Socket 3 Source Port Register: 6502
   ldy #$04
@@ -706,7 +895,7 @@ fixup06:
 
 ; Socket 3 Destination IP Address Register: Destination IP address
 ; this has to be the last call to set_ipv4value because it writes
-; as a side effect to 'recv_hdr' and it is the destination IP address
+; as a side effect to 'recv_hdr' and it is the server IP address
 ; that has to be present in 'recv_hdr' after initialization
   ldy #$0C
   jsr set_addrsocket3
@@ -721,22 +910,22 @@ fixup06:
   ldy #$00
   jsr set_addrsocket3
   lda #$02
-fixup07:
-  sta data
+fixup08:
+  sta w5100_data
 
 ; Socket 3 Command Register: OPEN
 ; -> addr is already set
   lda #$01
-fixup08:
-  sta data
+fixup09:
+  sta w5100_data
   rts
 
 set_ipv4value:
   ldx #$03
 : lda udp_mac,y
   iny
-fixup09:
-  sta data
+fixup10:
+  sta w5100_data
   sta recv_hdr+2,x
   dex
   bpl :-
@@ -745,10 +934,10 @@ fixup09:
 set_data6502:
   lda #<6502
   ldx #>6502
-fixup10:
-  stx data                      ; hibyte
 fixup11:
-  sta data                      ; lobyte
+  stx w5100_data                ; hibyte
+fixup12:
+  sta w5100_data                ; lobyte
   rts
 
 
@@ -769,44 +958,42 @@ udp_recv_init:
 ; in 'recv_hdr' and set C(arry flag) if there's a mismatch
   clc
   ldx #$05
-  stx tmp
 : jsr udp_recv_byte             ; doesn't trash C
-  ldx tmp
   eor recv_hdr,x                ; doesn't trash C
   beq :+
   sec
-: dec tmp
+: dex
   bpl :--
   php                           ; save C
 
 ; read data length
   jsr udp_recv_byte             ; hibyte
-  sta len+1
+  sta frame_len+1
   jsr udp_recv_byte             ; lobyte
-  sta len
+  sta frame_len
 
 ; add 8 byte header to set pointer advancement
   clc
   adc #<$0008
-  sta adv
-  lda len+1
+  sta preg_adv
+  lda frame_len+1
   adc #>$0008
-  sta adv+1
+  sta preg_adv+1
 
 ; skip frame if it doesn't originate from our expected communicaion peer
   plp                           ; restore C
   bcs udp_recv_done
 
 ; return data length
-  lda len
-  ldx len+1
+  lda frame_len
+  ldx frame_len+1
   rts
 
 
 udp_send_init:
 ; set pointer advancement
-  sta adv
-  stx adv+1
+  sta preg_adv
+  stx preg_adv+1
 
 ; Socket 3 TX Free Size Register: 0 or volatile ?
   lda #$20                      ; Socket TX Free Size Register
@@ -814,8 +1001,8 @@ udp_send_init:
   bne error
 
 ; Socket 3 TX Free Size Register: < advancement ?
-  cpx adv                       ; lobyte
-  sbc adv+1                     ; hibyte
+  cpx preg_adv                  ; lobyte
+  sbc preg_adv+1                ; hibyte
   bcc error                     ; not enough free size
 
 ; Socket 3 TX Write Pointer Register
@@ -838,55 +1025,27 @@ prolog:
 ; check for completion of previous command
 ; Socket 3 Command Register: 0 ?
   jsr set_addrcmdreg3
-fixup12:
-  ldx data
+fixup13:
+  ldx w5100_data
   bne :++                       ; not completed -> Z = 0
 
 ; Socket Size Register: not 0 ?
   tay                           ; select Size Register
   jsr get_wordsocket3
-  stx ptr                       ; lobyte
-  sta ptr+1                     ; hibyte
-  ora ptr
+  stx preg_val                  ; lobyte
+  sta preg_val+1                ; hibyte
+  ora preg_val
   bne :+
   inx                           ; -> Z = 0
   rts
 
 ; Socket Size Register: volatile ?
 : jsr get_wordsocket3
-  cpx ptr                       ; lobyte
+  cpx preg_val                  ; lobyte
   bne :+                        ; volatile size -> Z = 0
-  cmp ptr+1                     ; hibyte
+  cmp preg_val+1                ; hibyte
 ; bne :+                        ; volatile size -> Z = 0
 : rts
-
-
-udp_recv_byte:
-; Read byte
-fixup13:
-  lda data
-
-; increment physical addr shadow lobyte
-  inc sha
-  beq incsha
-  rts
-
-
-udp_send_byte:
-; Write byte
-fixup14:
-  sta data
-
-; increment physical addr shadow lobyte
-  inc sha
-  beq incsha
-  rts
-
-incsha:
-; increment physical addr shadow hibyte
-  inc sha+1
-  beq set_addrbase
-  rts
 
 
 udp_recv_done:
@@ -906,45 +1065,54 @@ epilog:
   jsr set_addrsocket3
   tay                           ; save command
   clc
-  lda ptr
-  adc adv
+  lda preg_val
+  adc preg_adv
   tax
-  lda ptr+1
-  adc adv+1
+  lda preg_val+1
+  adc preg_adv+1
+fixup14:
+  sta w5100_data                ; hibyte
 fixup15:
-  sta data                      ; hibyte
-fixup16:
-  stx data                      ; lobyte
+  stx w5100_data                ; lobyte
 
 ; Set command register
   tya                           ; restore command
   jsr set_addrcmdreg3
-fixup17:
-  sta data
+fixup16:
+  sta w5100_data
 
 ; return error (for udp_recv_init)
   bne error                     ; always
 
 set_addrphysical:
+fixup17:
+  lda w5100_data                ; hibyte
 fixup18:
-  lda data                      ; hibyte
-fixup19:
-  ldy data                      ; lobyte
-  sty ptr
-  sta ptr+1
+  ldy w5100_data                ; lobyte
+  sty preg_val
+  sta preg_val+1
   and #>$03FF                   ; Socket Mask Address (hibyte)
-  stx bas                       ; Socket Base Address (hibyte)
-  ora bas
+  stx sock_base                 ; Socket Base Address (hibyte)
+  ora sock_base
   tax
-  ora #>$FC00                   ; move sha/sha+1 to $FC00-$FFFF
-  sty sha
-  sta sha+1
+  ora #>$FC00                   ; move addr_sha/addr_sha+1 to $FC00-$FFFF
+  sty addr_sha
+  sta addr_sha+1
 
 set_addr:
+fixup19:
+  stx w5100_addr                ; hibyte
 fixup20:
-  stx addr                      ; hibyte
+  sty w5100_addr+1              ; lobyte
+  rts
+
+set_addrbase:
+  lda sock_base                 ; Socket Base Address (hibyte)
 fixup21:
-  sty addr+1                    ; lobyte
+  sta w5100_addr                ; hibyte
+  lda #<$0000                   ; Socket Base Address (lobyte)
+fixup22:
+  sta w5100_addr+1              ; lobyte
   rts
 
 set_addrcmdreg3:
@@ -954,17 +1122,122 @@ set_addrsocket3:
   ldx #>$0700                   ; Socket 3 register base address
   bne set_addr                  ; always
 
-set_addrbase:
-  ldx bas                       ; Socket Base Address (hibyte)
-  ldy #<$0000                   ; Socket Base Address (lobyte)
-  beq set_addr                  ; always
-
 get_wordsocket3:
   jsr set_addrsocket3
-fixup22:
-  lda data                      ; hibyte
 fixup23:
-  ldx data                      ; lobyte
+  lda w5100_data                ; hibyte
+fixup24:
+  ldx w5100_data                ; lobyte
+  rts
+
+
+udp_recv_byte:
+; read and save byte
+fixup25:
+  lda w5100_data
+  pha
+
+; increment physical addr shadow lobyte
+  inc addr_sha
+  bne :+
+
+; increment physical addr shadow hibyte
+  inc addr_sha+1
+  bne :+
+
+; wraparound to physical base address
+  jsr set_addrbase
+
+; restore byte and return
+: pla
+  rts
+
+
+udp_send_byte:
+; write byte
+fixup26:
+  sta w5100_data
+
+; update checksum if requested
+  bcc :+
+  eor checksum
+  sta checksum
+
+; increment physical addr shadow lobyte
+: inc addr_sha
+  bne :+
+
+; increment physical addr shadow hibyte
+  inc addr_sha+1
+  bne :+
+
+; wraparound to physical base address
+  jsr set_addrbase
+
+: rts
+
+
+udp_recv_page:
+  ldy #$00
+
+; cache physical addr shadow lobyte, no need to write back cache
+; as it will have the very same value after reading $100 bytes
+  ldx addr_sha
+
+; read and store byte
+fixup27:
+: lda w5100_data
+  sta (buffer),y
+
+; update checksum
+  eor checksum
+  sta checksum
+
+; increment physical addr shadow lobyte
+  inx
+  bne :+
+
+; increment physical addr shadow hibyte
+  inc addr_sha+1
+  bne :+
+
+; wraparound to physical base address
+  jsr set_addrbase
+
+: iny
+  bne :--
+  rts
+
+
+udp_send_page:
+  ldy #$00
+
+; cache physical addr shadow lobyte, no need to write back cache
+; as it will have the very same value after writing $100 bytes
+  ldx addr_sha
+
+; load and write byte
+: lda (buffer),y
+fixup28:
+  sta w5100_data
+
+; update checksum
+  eor checksum
+  sta checksum
+
+; increment physical addr shadow lobyte
+  inx
+  bne :+
+
+; increment physical addr shadow hibyte
+  inc addr_sha+1
+  bne :+
+
+; wraparound to physical base address
+  jsr set_addrbase
+
+: iny
+  bne :--
   rts
 
 ;------------------------------------------------------------------------------
@@ -978,7 +1251,7 @@ slot:
   .byte 3
 
 dummy:
-  .byte "www.google.com",0
+  .byte "192.168.0.23",0
 
 title_msg:
   .byte $0A
@@ -1061,7 +1334,8 @@ fixup_data:
   .byte fixup10-fixup09, fixup11-fixup10, fixup12-fixup11, fixup13-fixup12
   .byte fixup14-fixup13, fixup15-fixup14, fixup16-fixup15, fixup17-fixup16
   .byte fixup18-fixup17, fixup19-fixup18, fixup20-fixup19, fixup21-fixup20
-  .byte fixup22-fixup21, fixup23-fixup22
+  .byte fixup22-fixup21, fixup23-fixup22, fixup24-fixup23, fixup25-fixup24
+  .byte fixup26-fixup25, fixup27-fixup26, fixup28-fixup27
 
 fixup_size = * - fixup_data
 
@@ -1115,8 +1389,10 @@ driver_buffer:
 devcnt_bak:
   .byte $00
   .word $0000, $0000, $0000, $00000, $0000, $0000, $0000
+
 devmap_disk:
   .word $0000
+
 devadr_slot1:
   .word $0000, $0000
 
@@ -1131,8 +1407,23 @@ udp_gateway:
 udp_server:
   .word $0000, $0000
 
+date_time:
+  .word $0000, $0000
+
+prev_pnum:
+  .byte $00                     ; previous packet number
+
 recv_hdr:
   .word 6502                    ; server port       (little endian !)
   .word $0000, $0000            ; server IP address (little endian !)
+
+preg_adv:
+  .word $0000                   ; pointer register advancement
+
+frame_len:
+  .word $0000                   ; length of frame received
+
+sock_base:
+  .byte $00                     ; Socket 3 Base Address (hibyte)
 
 ;------------------------------------------------------------------------------
