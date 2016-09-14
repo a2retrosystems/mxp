@@ -52,6 +52,7 @@ devadr := $BF10
 devcnt := $BF31
 devlst := $BF32
 memtbl := $BF58
+datelo := $BF90
 speakr := $C030
 lc_ro  := $C088
 lc_wo  := $C089
@@ -64,6 +65,13 @@ prbyte := $FDDA
 
 .segment "STARTUP"
 
+; save zero page space
+  ldx #zpspace-1
+: lda sp,x
+  sta zeropage_save,x
+  dex
+  bpl :-
+
 ; print title
   lda #<title_msg
   ldx #>title_msg
@@ -71,7 +79,7 @@ prbyte := $FDDA
 
 ; check if Uther II Drive marker (JMP) is present
   bit lc_ro
-  lda u2d_marker                ; either JMP or JSR
+  lda u2d_marker                ; JMP or JSR
   cmp #$4C
   bit lc_off
   bcc install_u2d
@@ -79,19 +87,23 @@ prbyte := $FDDA
 
 
 install_u2d:
+; load config file
+  lda #<config_name
+  ldx #>config_name
+  ldy #$00                      ; file page to fast-forward to
+  jsr load
+
 ; print 'uthernet'
   lda #<uthernet_msg
   ldx #>uthernet_msg
   jsr print_ascii_as_native
-  lda slot
-  clc
-  adc #'0'
+  lda load_buffer
   jsr print_a
 
 ; check for Uthernet II
-  lda slot
+  lda load_buffer               ; '1' .. '7'
+  and #$07                      ; $01 .. $07
   jsr a2_set_slot
-;jmp xxx
   jsr ip65_init
   bcc :+
   lda #<dev_not_found_msg
@@ -110,11 +122,11 @@ install_u2d:
 : lda #<cfg_ip
   ldx #>cfg_ip
   jsr print_dotted_quad
+  jsr print_cr
 
-;xxx:
 ; check if server name needs to be resolved
-  lda #<dummy
-  ldx #>dummy
+  lda #<(load_buffer + 2)
+  ldx #>(load_buffer + 2)
   jsr dns_set_hostname
   bcc :+
   jmp ip65_exit
@@ -125,8 +137,8 @@ install_u2d:
   lda #<resolve_msg
   ldx #>resolve_msg
   jsr print_ascii_as_native
-  lda #<dummy
-  ldx #>dummy
+  lda #<(load_buffer + 2)
+  ldx #>(load_buffer + 2)
   jsr print_ascii_as_native
 
 ; resolve server name
@@ -134,8 +146,16 @@ install_u2d:
   bcc :+
   jmp ip65_exit
 
+; print 'server'
+: lda #<server_msg
+  ldx #>server_msg
+  jsr print_ascii_as_native
+  lda #<dns_ip
+  ldx #>dns_ip
+  jsr print_dotted_quad
+
 ; print 'install'
-: lda #<install_msg
+  lda #<install_msg
   ldx #>install_msg
   jsr print_ascii_as_native
 
@@ -171,6 +191,13 @@ install_u2d:
   sta udp_server,x
   dex
   bpl :-
+
+; set audio feedback in UDP driver
+  lda load_buffer + 1           ; '0' or '1'
+  and #$01                      ; $00 or $01
+  lsr
+  ror
+  sta udp_audio                 ; $00 or $80
 
 ; backup device count and device list
   ldx #14
@@ -237,7 +264,7 @@ install_u2d:
   jsr print_cr
 
 ; add two slot 1 devices to device list just before /RAM (if present) because
-; - programs wanting to disconnect /RAM might assume it a the end of the list
+; - programs wanting to disconnect /RAM might assume it at the end of the list
 ; - devices are searched for unknown volumes starting at the end of the list
 ;   so they are ordered best by speed (RAM > net > disk)
   ldx devcnt
@@ -379,8 +406,12 @@ remove_u2d:
   ldx #>remove_msg
   jsr print_ascii_as_native
 
-; switch LC bank 1 to read-only access
-  bit lc_ro
+; switch LC bank 1 to read/write access
+  bit lc_rw
+  bit lc_rw
+
+; Reset UDP driver
+  jsr udp_reset
 
 ; restore both slot 1 device driver addresses
   lda devadr_slot1
@@ -418,12 +449,12 @@ remove_u2d:
   bit lc_wo
 
 ; restore (start of) ProDOS Disk II driver
-  lda #<driver_buffer
-  ldx #>driver_buffer
+  lda #<load_buffer
+  ldx #>load_buffer
   sta $9B                       ; source first lo
   stx $9C                       ; source first hi
-  lda #<(driver_buffer + __DRIVER_SIZE__)
-  ldx #>(driver_buffer + __DRIVER_SIZE__)
+  lda #<(load_buffer + __DRIVER_SIZE__)
+  ldx #>(load_buffer + __DRIVER_SIZE__)
   sta $96                       ; source last lo
   stx $97                       ; source last hi
   lda #<__DISKII_LAST__
@@ -544,6 +575,13 @@ error_exit:
 
 
 exit:
+; restore zero page space
+  ldx #zpspace-1
+: lda zeropage_save,x
+  sta sp,x
+  dex
+  bpl :-
+
 ; check ProDOS system bit map
   rol                           ; save carry
   ldx memtbl + >$B800 >> 3      ; protection for pages $B8 - $BF
@@ -602,6 +640,11 @@ u2d_marker:
 
 driver:
   jsr udp_check                 ; Check for RESET
+  lda #$00
+  sta timeout
+  sta timeout+1
+  lda #$01
+  sta backoff
   lda command
   cmp #read
   beq do_read
@@ -625,7 +668,7 @@ do_read:
   bcs driver_error
 
 ; send 'Read3' request
-  ldx #$03
+  ldy #$03
   jsr send_envelope
 
 ; do it!
@@ -635,9 +678,13 @@ do_read:
 ; skip "wrong" data
 : jsr udp_recv_done
 
+; retry if timeout
+: jsr retry
+  bcs driver_error
+  beq do_read
+
 ; receive 523 bytes
-: jsr udp_recv_init
-inc $400
+  jsr udp_recv_init
   bcs :-
   cmp #<523
   bne :--
@@ -645,7 +692,7 @@ inc $400
   bne :--
 
 ; receive 'Read3' response
-  ldx #$03
+  ldy #$03
   jsr recv_envelope
   bne :--
 
@@ -668,7 +715,15 @@ inc $400
 
 ; response received
   jsr udp_recv_done
-  bit speakr
+  ldx udp_audio
+  lda speakr - $80,x
+
+; set date/time
+  ldx #$03
+: lda date_time,x
+  sta datelo,x
+  dex
+  bpl :-
 
 ; return success
   lda #okay
@@ -689,7 +744,7 @@ do_write:
   bcs driver_error
 
 ; send 'Write' request
-  ldx #$02
+  ldy #$02
   jsr send_envelope
 
 ; reset checksum
@@ -716,9 +771,13 @@ do_write:
 ; skip "wrong" data
 : jsr udp_recv_done
 
+; retry if timeout
+: jsr retry
+  bcs driver_error
+  beq do_write
+
 ; receive 6 bytes
-: jsr udp_recv_init
-inc $401
+  jsr udp_recv_init
   bcs :-
   cmp #<6
   bne :--
@@ -726,13 +785,14 @@ inc $401
   bne :--
 
 ; receive 'Write' response
-  ldx #$02
+  ldy #$02
   jsr recv_envelope
   bne :--
 
 ; response received
   jsr udp_recv_done
-  bit speakr
+  ldx udp_audio
+  lda speakr - $80,x
 
 ; return success
   lda #okay
@@ -766,14 +826,16 @@ recv_envelope:
   bne :+++
 
 ; recv date/time if 'Read3'
-  cpx #$03
+  cpy #$03
   bne :++
+  ldx #$00
 : jsr udp_recv_byte
   sta date_time,x
   eor checksum
   sta checksum
-  dex
-  bpl :-
+  inx
+  cpx #$04
+  bcc :-
 
 ; recv checksum and return
 : jsr udp_recv_byte
@@ -794,7 +856,7 @@ send_envelope:
 ; send ADTPro command
   lda unitnum
   asl
-  txa
+  tya
   bcc :+
   adc #$01
 : sta adtp_cmd
@@ -815,6 +877,33 @@ send_envelope:
   jsr udp_send_byte
   rts
 
+
+retry:
+; increment timeout
+  clc
+  inc timeout
+  bne :+
+  inc timeout+1
+
+; check for end of timeout
+  lda timeout+1
+  cmp backoff
+  bcc :+
+
+; check for end of backoff
+  lda backoff
+  bmi :++
+
+; prepare for retry
+  asl backoff                   ; clears carry
+  lda #$00
+  sta timeout+1
+: rts
+
+; finally give up
+: sec
+  rts
+
 ;------------------------------------------------------------------------------
 
 .segment "DRIVER"
@@ -833,11 +922,16 @@ fixup01:
   bne udp_init
   rts
 
-udp_init:
+udp_reset:
 ; S/W Reset
   lda #$80
 fixup02:
   sta w5100_mode
+  rts
+
+udp_init:
+  jsr udp_reset
+; Wait for S/W Reset to complete
 fixup03:
 : lda w5100_mode
   bmi :-
@@ -1244,14 +1338,11 @@ fixup28:
 
 .rodata
 
+config_name:
+  .byte "U2D.CONFIG",0
+
 prodos_name:
   .byte "PRODOS",0
-
-slot:
-  .byte 3
-
-dummy:
-  .byte "192.168.0.23",0
 
 title_msg:
   .byte $0A
@@ -1263,6 +1354,8 @@ title_msg:
   .byte $0A,0
 
 uthernet_msg:
+  .byte $0A
+  .byte $0A
   .byte "Init Uthernet II in slot ",0
 
 obtain_msg:
@@ -1273,6 +1366,10 @@ obtain_msg:
 resolve_msg:
   .byte $0A
   .byte "Resolve ",0
+
+server_msg:
+  .byte $0A
+  .byte "Server IP address ",0
 
 install_msg:
   .byte $0A
@@ -1362,7 +1459,7 @@ read_param:
   .byte $04                     ; read param count
 read_ref_num:
   .byte $00
-  .word driver_buffer
+  .word load_buffer
   .word __DRIVER_SIZE__
   .word $0000
 
@@ -1375,12 +1472,15 @@ close_ref_num:
 
 .bss
 
+zeropage_save:
+  .res zpspace
+
   .res $0100                    ; for page aligned io_buffer
 io_buffer:
   .res $0400
 
-driver_buffer:
-  .res $0700
+load_buffer:
+  .res $06EC
 
 ;------------------------------------------------------------------------------
 
@@ -1407,8 +1507,17 @@ udp_gateway:
 udp_server:
   .word $0000, $0000
 
+udp_audio:
+  .byte $00
+
 date_time:
   .word $0000, $0000
+
+timeout:
+  .word $0000
+
+backoff:
+  .byte $00                     ; binary exponential backoff
 
 prev_pnum:
   .byte $00                     ; previous packet number
