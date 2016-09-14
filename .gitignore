@@ -4,6 +4,7 @@
 *.bin
 *.sys
 *.dsk
+*.po
 
 *.obj
 *.exe
