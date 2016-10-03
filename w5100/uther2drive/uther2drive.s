@@ -982,10 +982,11 @@ fixup06:
 fixup07:
   sta w5100_data
 
-; Socket 3 Source Port Register: 6502
+; Socket 3 Source Port Register: 6503
   ldy #$04
   jsr set_addrsocket3
-  jsr set_data6502
+  lda #<6503
+  jsr set_data65xx
 
 ; Socket 3 Destination IP Address Register: Destination IP address
 ; this has to be the last call to set_ipv4value because it writes
@@ -998,7 +999,8 @@ fixup07:
 
 ; Socket 3 Destination Port Register: 6502
 ; -> addr is already set
-  jsr set_data6502
+  lda #<6502
+  jsr set_data65xx
 
 ; Socket 3 Mode Register: UDP
   ldy #$00
@@ -1025,9 +1027,8 @@ fixup10:
   bpl :-
   rts
 
-set_data6502:
-  lda #<6502
-  ldx #>6502
+set_data65xx:
+  ldx #>6500
 fixup11:
   stx w5100_data                ; hibyte
 fixup12:
