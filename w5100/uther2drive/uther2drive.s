@@ -226,6 +226,7 @@ install_u2d:
   asl
   asl
   jsr remove_device             ; remove from device list
+  jsr online                    ; dealloc VCB
   pla
   tax
   inc tmp2                      ; mark removed Disk II driver slot/drive
@@ -387,6 +388,7 @@ print_device:
   lda #$01
   adc #'0'                      ; 1 + drive number + '0'
   jsr print_a
+  lda tmp1
   rts
 
 ;------------------------------------------------------------------------------
@@ -444,9 +446,13 @@ remove_u2d:
   dex
   bpl :-
 
-; switch LC bank 1 to write-only access
-  bit lc_wo
-  bit lc_wo
+; dealloc VCBs (if there's "No Device Connected" now)
+  lda #1 << 4                   ; slot 1 drive 1
+  jsr online
+  lda #1 << 4 + $80             ; slot 1 drive 2
+  jsr online
+
+; LC bank 1 switched to write-only access
 
 ; restore (start of) ProDOS Disk II driver
   lda #<load_buffer
@@ -533,6 +539,27 @@ load:
   .byte $CC                     ; close call
   .word close_param
   bcs code_exit
+  rts
+
+online:
+  bit lc_off
+
+; Technical Note #23 on changes for ProDOS 8 1.2:
+;   Modified the ONLINE call so that it could be made to a device that had
+;   just been removed from the device list by the standard protocol.
+;   Previous to this change, a VCB for the removed device was left,
+;   reducing the number of on-line volumes by one for each such device.
+;   From this point on, removing a device should be followed by an ONLINE
+;   call to the device just removed.  The call returns error $28 (No
+;   Device Connected), but deallocates the VCB.
+  sta online_unit_num
+  jsr mli
+  .byte $C5                     ; online call
+  .word online_param
+
+; switch LC bank 1 to write-only access (again) and return
+  bit lc_wo
+  bit lc_wo
   rts
 
 ;------------------------------------------------------------------------------
@@ -1469,6 +1496,12 @@ close_param:
 close_ref_num:
   .byte $00
 
+online_param:
+  .byte $02                     ; online param count
+online_unit_num:
+  .byte $00
+  .word online_buffer
+
 ;------------------------------------------------------------------------------
 
 .bss
@@ -1482,6 +1515,9 @@ io_buffer:
 
 load_buffer:
   .res $06EC
+
+online_buffer:
+  .res $0010
 
 ;------------------------------------------------------------------------------
 
