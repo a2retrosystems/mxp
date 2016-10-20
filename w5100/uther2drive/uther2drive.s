@@ -226,7 +226,7 @@ install_u2d:
   asl
   asl
   jsr remove_device             ; remove from device list
-  jsr online                    ; dealloc VCB
+  jsr online                    ; dealloc stale VCB
   pla
   tax
   inc tmp2                      ; mark removed Disk II driver slot/drive
@@ -241,7 +241,7 @@ install_u2d:
   lda tmp3
   sta devmap_disk+1
 
-; backup and replace both slot 1 device driver addresses
+; backup and remove both slot 1 device driver addresses
   lda devadr   + 1 << 1         ; slot 1 drive 1 lo
   ldx devadr+1 + 1 << 1         ; slot 1 drive 1 hi
   sta devadr_slot1
@@ -250,8 +250,8 @@ install_u2d:
   ldx devadr+1 + 1 << 1 + $10   ; slot 1 drive 2 hi
   sta devadr_slot1+2
   stx devadr_slot1+3
-  lda #<driver                  ; Uthernet II driver lo
-  ldx #>driver                  ; Uthernet II driver hi
+  lda devadr                    ; "No Device Connected" lo
+  ldx devadr+1                  ; "No Device Connected" hi
   sta devadr   + 1 << 1         ; slot 1 drive 1 lo
   stx devadr+1 + 1 << 1         ; slot 1 drive 1 hi
   sta devadr   + 1 << 1 + $10   ; slot 1 drive 2 lo
@@ -260,9 +260,19 @@ install_u2d:
 ; remove slot 1 devices (if present) from device list
   lda #1 << 4                   ; slot 1 drive 1
   jsr remove_device
+  jsr online                    ; dealloc stale VCB
   lda #1 << 4 + $80             ; slot 1 drive 2
   jsr remove_device
+  jsr online                    ; dealloc stale VCB
   jsr print_cr
+
+; set the two slot 1 device driver addresses
+  lda #<driver                  ; Uthernet II driver lo
+  ldx #>driver                  ; Uthernet II driver hi
+  sta devadr   + 1 << 1         ; slot 1 drive 1 lo
+  stx devadr+1 + 1 << 1         ; slot 1 drive 1 hi
+  sta devadr   + 1 << 1 + $10   ; slot 1 drive 2 lo
+  stx devadr+1 + 1 << 1 + $10   ; slot 1 drive 2 hi
 
 ; add two slot 1 devices to device list just before /RAM (if present) because
 ; - programs wanting to disconnect /RAM might assume it at the end of the list
@@ -446,13 +456,9 @@ remove_u2d:
   dex
   bpl :-
 
-; dealloc VCBs (if there's "No Device Connected" now)
-  lda #1 << 4                   ; slot 1 drive 1
-  jsr online
-  lda #1 << 4 + $80             ; slot 1 drive 2
-  jsr online
-
-; LC bank 1 switched to write-only access
+; switch LC bank 1 to write-only access
+  bit lc_wo
+  bit lc_wo
 
 ; restore (start of) ProDOS Disk II driver
   lda #<load_buffer
@@ -468,6 +474,12 @@ remove_u2d:
   sta $94                       ; destination last lo
   stx $95                       ; destination last hi
   jsr bltu2                     ; Applesoft block transfer up
+
+; dealloc stale VCBs
+  lda #1 << 4                   ; slot 1 drive 1
+  jsr online
+  lda #1 << 4 + $80             ; slot 1 drive 2
+  jsr online
 
 ; switch LC bank 1 off and exit
   bit lc_off
@@ -557,7 +569,7 @@ online:
   .byte $C5                     ; online call
   .word online_param
 
-; switch LC bank 1 to write-only access (again) and return
+; switch LC bank 1 to write-only access again and return
   bit lc_wo
   bit lc_wo
   rts
