@@ -93,25 +93,31 @@ install_u2d:
   ldy #$00                      ; file page to fast-forward to
   jsr load
 
-; print 'uthernet'
-  lda #<uthernet_msg
-  ldx #>uthernet_msg
-  jsr print_ascii_as_native
-  lda load_buffer
-  jsr print_a
-
 ; check for Uthernet II
-  lda load_buffer               ; '1' .. '7'
-  and #$07                      ; $01 .. $07
+  lda #$01                      ; start with slot 1
+: pha
   jsr a2_set_slot
   jsr ip65_init
+  pla
   bcc :+
+  adc #$00                      ; carry is set
+  cmp #$08                      ; beyond slot 7 ?
+  bcc :-
   lda #<dev_not_found_msg
   ldx #>dev_not_found_msg
   jmp error_exit
 
+; print 'uthernet'
+: adc #'0'                      ; carry is clear
+  pha
+  lda #<uthernet_msg
+  ldx #>uthernet_msg
+  jsr print_ascii_as_native
+  pla
+  jsr print_a
+
 ; print 'obtain'
-: lda #<obtain_msg
+  lda #<obtain_msg
   ldx #>obtain_msg
   jsr print_ascii_as_native
 
@@ -125,8 +131,8 @@ install_u2d:
   jsr print_cr
 
 ; check if server name needs to be resolved
-  lda #<(load_buffer + 2)
-  ldx #>(load_buffer + 2)
+  lda #<(load_buffer + 1)
+  ldx #>(load_buffer + 1)
   jsr dns_set_hostname
   bcc :+
   jmp ip65_exit
@@ -137,8 +143,8 @@ install_u2d:
   lda #<resolve_msg
   ldx #>resolve_msg
   jsr print_ascii_as_native
-  lda #<(load_buffer + 2)
-  ldx #>(load_buffer + 2)
+  lda #<(load_buffer + 1)
+  ldx #>(load_buffer + 1)
   jsr print_ascii_as_native
 
 ; resolve server name
@@ -193,7 +199,7 @@ install_u2d:
   bpl :-
 
 ; set audio feedback in UDP driver
-  lda load_buffer + 1           ; '0' or '1'
+  lda load_buffer               ; '0' or '1'
   and #$01                      ; $00 or $01
   lsr
   ror
