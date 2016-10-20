@@ -77,16 +77,16 @@ prbyte := $FDDA
   ldx #>title_msg
   jsr print_ascii_as_native
 
-; check if Uther II Drive marker (JMP) is present
+; check if VEDRIVE marker (JMP) is present
   bit lc_ro
-  lda u2d_marker                ; JMP or JSR
+  lda vedrive_marker            ; JMP or JSR
   cmp #$4C
   bit lc_off
-  bcc install_u2d
-  jmp remove_u2d
+  bcc install_vedrive
+  jmp remove_vedrive
 
 
-install_u2d:
+install_vedrive:
 ; load config file
   lda #<config_name
   ldx #>config_name
@@ -412,7 +412,7 @@ print_device:
 .code
 
 
-remove_u2d:
+remove_vedrive:
 ; load Disk II driver
   lda #<prodos_name
   ldx #>prodos_name
@@ -504,11 +504,11 @@ load:
 ; build path
   sta ptr1
   stx ptr1+1
+  lda path
+  sec
+  sbc #.strlen("VEDRIVE")
+  tax
   ldy #$00
-  ldx path
-  dex                           ; 'D'
-  dex                           ; '2'
-  dex                           ; 'U'
 : lda (ptr1),y
   sta path+1,x
   beq :+
@@ -679,7 +679,7 @@ no_device = $28
 writeprot = $2B
 
   cld                           ; necessary for LC setting detection
-u2d_marker:
+vedrive_marker:
   jmp udp_init
 
 
@@ -1385,18 +1385,18 @@ fixup28:
 .rodata
 
 config_name:
-  .byte "U2D.CONFIG",0
+  .byte "VEDRIVE.CONFIG",0
 
 prodos_name:
   .byte "PRODOS",0
 
 title_msg:
   .byte $0A
-  .byte "***************************",$0A
-  .byte "**                       **",$0A
-  .byte "**  Uther II Drive V1.0  **",$0A
-  .byte "**                       **",$0A
-  .byte "***************************",$0A
+  .byte "*************************************",$0A
+  .byte "**                                 **",$0A
+  .byte "**  ADTPro Virtual Ethernet Drive  **",$0A
+  .byte "**                                 **",$0A
+  .byte "*************************************",$0A
   .byte $0A,0
 
 uthernet_msg:
@@ -1428,7 +1428,7 @@ disconnect_msg:
 
 connect_msg:
   .byte $0A
-  .byte "Add Uther II Drive",0
+  .byte "Add VEDRIVE",0
 
 slot_msg:
   .byte " in slot ",0
@@ -1453,7 +1453,7 @@ error_msg:
 
 dev_not_found_msg:
   .byte $0A
-  .byte "Device not found",$0A
+  .byte "Uthernet II not found",$0A
   .byte $0A,0
 
 abort_msg:
