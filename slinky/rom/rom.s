@@ -103,6 +103,3 @@ slot      equ 7
 .segment  'exec'
 .include  'execute.inc'
 .include  'makecat.inc'
-
-.segment  'diags'
-.include  'diags.inc'

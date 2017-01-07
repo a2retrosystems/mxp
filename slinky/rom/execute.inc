@@ -37,24 +37,6 @@ dosconv2  jmp dosconv
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
-; XDIAG - Moves the diagnostic code from $CCF0 - $CFEF to
-; ram starting at $2000 and jumps to $2000
-;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-xdiag     ldx #0
-xdloop    lda diagcode,x      ; Move the code
-          sta diagdest,x
-          lda diagcode+$100,x
-          sta diagdest+$100,x
-          lda diagcode+$200,x
-          sta diagdest+$200,x
-          inx
-          bne xdloop
-          ldx devno
-          jmp diagdest        ; Off we go
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
 ; XSTATUS - ProDOS status call
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -416,7 +398,7 @@ parmtbl   dfb 03,03,03
           dfb 01,04,04
           dfb 04,04,$FF
           dfb $FF,$FF,$FF
-          dfb $FF,$FF
+          dfb $FF
 
 ; Table of command addresses
 cmdtbl    dfb <pstat0-1       ; status unit 0
@@ -444,4 +426,3 @@ cmdtbl    dfb <pstat0-1       ; status unit 0
           dfb <xwrite-1       ; ProDOS write call
           dfb <iorts-1        ; ProDOS format call
           dfb <dosconv2-1     ; Dos Command
-          dfb <xdiag-1        ; Diagnostics !

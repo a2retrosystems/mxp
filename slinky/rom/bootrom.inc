@@ -8,13 +8,10 @@
           cmp #$20            ; Boot entry point
           cmp #$00            ; Signature byte stuff
           cmp #$03
-          cmp #0
-          bcs boot2           ; Always taken
-          ldy #5              ; Diagnostics entry point
-          bne dos2
+          cmp #$00
           ; Here is the boot code
           ; Reads in block 0 into $800 and executes at $801
-boot2     sei                 ; No interrupts if booting
+          sei                 ; No interrupts if booting
           lda kswh            ; Save IN#
           pha
           jsr setkbd          ; Reset the hooks

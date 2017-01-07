@@ -107,5 +107,3 @@ nameflg   equ $AA             ; Value unused in any catalog
 sizeflg   equ $FC             ; Block size flag
 zers      equ $FD             ; Catalog skip flag
 skpfe     equ $FE             ; Skip FE bytes in catalog
-diagcode  equ $CCF0           ; Location of diagnostic code
-diagdest  equ $2000           ; Location of diagnostics in ram
