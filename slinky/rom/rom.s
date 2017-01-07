@@ -32,7 +32,15 @@
           dfb pcrevnum        ; Smartport revision number
           dfb $01             ; Mark ram card
           dw 0                ; Number of blocks = 0 for status call
-          dfb $4F
+          ; Status bits
+          ;  7 = medium is removable
+          ;  6 = device is interruptable
+          ;  5-4 = number of volumes (0..3 means 1..4)
+          ;  3 = device supports Format call
+          ;  2 = device can be written to
+          ;  1 = device can be read from (must be 1)
+          ;  0 = device status can be read (must be 1)
+          dfb %01001111
           dfb <entry
 .endmacro
 
