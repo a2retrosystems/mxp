@@ -3,7 +3,7 @@
 ; Equates
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-revnum    equ $1000           ; Revision 1.0
+revnum    equ $101            ; Revision 1.0.1
 pcrevnum  equ $11             ; SmartPort rev 1.1
 
 ; Prodos equates

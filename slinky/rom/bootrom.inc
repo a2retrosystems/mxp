@@ -58,7 +58,9 @@ ent       lda #nderr          ; Assume wrong drive
           bmi rats            ; Error!!!
           lda #badcmd         ; Assume bad command
           ldy command         ; Get command
-          cmp #4
+          ; The 'cpy #4' below used to be a 'cmp #4'
+          ; Because of this change, revnum became 1.0.1
+          cpy #4
           bge rats            ; Branch if bad command
 dos2      ldx #zused          ; Save zp DOS jumps in here
 zsave     lda command-1,x
