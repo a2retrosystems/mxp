@@ -4,6 +4,48 @@
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+.feature  labels_without_colons
+.define   equ =
+.define   asc .byte
+.define   dfb .byte
+
+; Monitor equates
+cv        equ $25             ; Cursor vertical position
+cout      equ $FDED           ; Print a character
+
+; Slot ram equates
+scrn1     equ $478-$C0
+scrn2     equ $4F8-$C0
+scrn3     equ $578-$C0
+numbanks  equ scrn1           ; Number of 64K banks on card
+powerup   equ scrn2           ; Powerup byte
+power2    equ scrn3
+
+; Hardware equates, must be in BF00 to avoid double access
+addrl     equ $BFF8           ; Address pointer
+addrm     equ $BFF9           ; Automat1cally incs every data access
+addrh     equ $BFFA
+data      equ $BFFB           ; Data pointed to
+
+          lda #$11
+          jsr Print           ; "MEMORY CARD SLOT?"
+          sta KStrobe
+noslot    lda Kbd
+          cmp #'1'+$80        ; < '1'?
+          bcc noslot
+          cmp #'8'+$80        ; >= '8'?
+          bcs noslot
+          sta KStrobe
+          and #7
+          ora #$C0
+          tay                 ; slot+$C0 like MSlot
+          asl
+          asl
+          asl
+          asl
+          ora #$88
+          tax                 ; slot*$10+$88 like DevNo
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; By Eric Larson Last Modified; 19 Apr. 85
 ; Modified by Rich williams 9 May 85
@@ -338,6 +380,7 @@ Messages                      ; Table of pointers to actual messages
           dfb M0E-M0
           dfb M0F-M0
           dfb M10-M0
+          dfb M11-M0
 M0        asc "1 ME",'G'+128
 M1        asc "256", 'K'+128
 M2        asc "512", 'K'+128
@@ -367,5 +410,7 @@ M0F       dfb CR
           asc "SEE DEALER FOR SERVICE"
           dfb CR+128
 M10       asc "PASSES =",' '+128
+M11       dfb CR
+          asc "MEMORY CARD SLOT",'?'+128
 Patterns  dfb $FF,$CC,$AA,$55,$33,$00 ; Data buss patterns
-          asc 'Rich WilCiams'
+          asc "Rich Williams"
