@@ -73,8 +73,6 @@ fmnosp    php                 ; Z = 1 if all spaces
           beq fmtdone
           lda proflag         ; What type of catalog?
           beq fmpas
-          cmp #$4c            ; JMP if ProDDS
-          bne fmdos
           ldy #<procat        ; Do a ProDDS catalog
           jsr makecat         ; Put in all but bit map
           lda #01             ; Blocks 0-6 busy
@@ -88,29 +86,8 @@ fmpmap2   sta data,x
 fmtdone   rts
 
 ; Do a Pascal catalog
-fmpas     ldy #pascat
+fmpas     ldy #<pascat
           jsr makecat
-          rts
-
-; Do a DOS catalog
-fmdos     ldy #doscat
-          jsr makecat
-          lda #$44            ; Point to track 3 bitmap
-          sta addrl,x         ; Addrl = 0 from makecat
-          lda sizetemp        ; Check if at least 512K
-          ldy #114            ; Assume 256K
-          cmp #4              ; At least $400 blocks
-          blt fmdbmap
-          ldy #186            ; Make 400K volume
-fmdbmap   lda addrl,x         ; Don't free catalog
-          cmp #$7C            ; Track $11?
-          bne fmdok
-          lda #$7E            ; Skip first 16 sectors
-          sta addrl,x         ; 7C -> 7E so no false carry
-fmdok     lda #$FF
-          sta data,x
-          dey
-          bne fmdbmap
           rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -208,39 +185,6 @@ procat    equ *-cattbl-1
           dw 4                ; Block 5 $A00
           dfb 0,skpfe         ; Get into second page
           dw zers,0,0         ; All done left at block 6
-
-doscat    equ *-cattbl-1
-          dfb zers,0,$20,$02  ; Trk $11 Sec 0 = $022000
-          dfb 2               ; Sec 0 = VTOC
-          dfb $11,$0F         ; Pointer to catalog
-          dfb $4              ; Dos release
-          dfb 0,0             ; Unused
-          dfb $FB             ; Volume number
-          dfb zers,$20
-          dfb $7A             ; TS pairs in TS list
-          dfb zers,8
-          dfb $FF,$FF,$FF,$FF ; Allocation mask
-          dfb $32             ; # Tracks
-          dfb $20             ; # Sectors
-          dw  $100            ; # Bytes per sector
-          dfb zers,$CB
-          dfb skpfe           ; Sector 1 all 0s
-          dfb $11,$01,skpfe   ; Next cat sector pointer
-          dfb $11,$02,skpfe
-          dfb $11,$03,skpfe
-          dfb $11,$04,skpfe
-          dfb $11,$05,skpfe
-          dfb $11,$06,skpfe
-          dfb $11,$07,skpfe
-          dfb $11,$08,skpfe
-          dfb $11,$09,skpfe
-          dfb $11,$0A,skpfe
-          dfb $11,$0B,skpfe
-          dfb $11,$0C,skpfe
-          dfb $11,$0D,skpfe
-          dfb $11,$0E,skpfe
-          dfb zers,0,$20,$02  ; Leave pointing at VTOC
-          dfb zers,0,0        ; All done
 
 pascat equ *-cattbl-1
           dfb 0,0

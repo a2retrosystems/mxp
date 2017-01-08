@@ -33,7 +33,6 @@ pzcnt     lda #badpcnt
 pzcnt2    sta error
 iorts     rts
 pwrite2   jmp pwrite          ; Entry point in this page
-dosconv2  jmp dosconv
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
@@ -282,17 +281,9 @@ pwmain2   rts
 ;  Inputs: A = kswh, X = devno, Y = mslot
 ;  Outputs: Z = 1 if boot fails
 ;
-; Jumps to DDS patch if IN# from DOS
-;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 boot      stx devno
-          cmp mslot           ; Is it a IN#
-          bne btnodos
-          lda proflag         ; Are we in DOS?
-          beq btnodos         ; 0 = Pascal
-          cmp #$4C            ; JMP = ProDOS
-          bne dospatch        ; Go patch DOS
-btnodos   lda power2,y        ; If power up bytes not set, don't boot
+          lda power2,y        ; If power up bytes not set, don't boot
           eor #$A5
           cmp powerup,y
           bne btfail
@@ -309,71 +300,6 @@ btfail    lda #0              ; Z = 1 for fail
           rts
 btcmd     dw $800
           dw 0                ; Read in block 0 @ $800
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
-; DOSPATCH - Patches rwts to jump to us
-;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-dospatch  lda #$4C            ; JMP opcode
-          sta rwts
-          lda #<boot1::dosent
-          sta rwts+1          ; Make page 3 vector point to us
-          sty rwts+2          ; Y = Cn
-          lda #<dossyn        ; Patch out init command
-          sta dosinit
-          lda #>dossyn
-          sta dosinit+1
-          pla                 ; Pop off return address
-          pla
-          ldx #0
-          lda #$98            ; Return a control-X
-dcrts     rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
-; DOSCONV - Changes DOS command into ours
-;  Output: command table in zp Y = command
-;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-dosconv   ldy #ibdrvn         ; Get drive 1 or 2
-          lda (iobpl),y
-          cmp #1              ; Dnly 1 valid
-          beq dc1
-dcerr     jmp pzcmd           ; Bad drive number
-dc1       ldy #ibtrk          ; Get track & sector
-          lda (iobpl),y       ; Addr = 00000TTT TTTSSSSS 00000000
-          lsr a
-          ror paddr+1
-          lsr a
-          ror paddr+1
-          lsr a
-          sta paddr+2
-          lda paddr+1
-          ror a
-          and #$E0
-          iny
-          ora (iobpl),y       ; Dr in sector
-          sta paddr+1
-          ldy #ibbufp         ; Get pointer to user’s buffer
-          lda (iobpl),y
-          sta pbuff
-          iny
-          lda (iobpl),y
-          sta pbuff+1
-          ldy #ibcmd          ; Get command
-          lda (iobpl),y
-          beq dcrts           ; 0 = null = do nothing
-          and #3
-          beq dcerr           ; 4 = format is an error
-          ora #17             ; 1 -> 17 , 2 -> 19
-          tay                 ; Y = command
-          ldx #0
-          stx pcount          ; Count = $100 bytes
-          stx paddr
-          inx
-          stx pcount+1
-          jmp exec2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
@@ -398,7 +324,6 @@ parmtbl   dfb 03,03,03
           dfb 01,04,04
           dfb 04,04,$FF
           dfb $FF,$FF,$FF
-          dfb $FF
 
 ; Table of command addresses
 cmdtbl    dfb <pstat0-1       ; status unit 0
@@ -425,4 +350,3 @@ cmdtbl    dfb <pstat0-1       ; status unit 0
           dfb <xread-1        ; ProDOS read call
           dfb <xwrite-1       ; ProDOS write call
           dfb <iorts-1        ; ProDOS format call
-          dfb <dosconv2-1     ; Dos Command

@@ -44,7 +44,7 @@
           dfb <entry
 .endmacro
 
-.scope    boot1
+.scope
 slot      equ 1
 .segment  'boot1'
 .include  'bootrom.inc'
@@ -52,7 +52,7 @@ slot      equ 1
           bootromdefs
 .endscope
 
-.scope    boot2
+.scope
 slot      equ 2
 .segment  'boot2'
 .include  'bootrom.inc'
@@ -60,7 +60,7 @@ slot      equ 2
           bootromdefs
 .endscope
 
-.scope    boot3
+.scope
 slot      equ 3
 .segment  'boot3'
 .include  'bootrom.inc'
@@ -68,7 +68,7 @@ slot      equ 3
           bootromdefs
 .endscope
 
-.scope    boot4
+.scope
 slot      equ 4
 .segment  'boot4'
 .include  'bootrom.inc'
@@ -76,7 +76,7 @@ slot      equ 4
           bootromdefs
 .endscope
 
-.scope    boot5
+.scope
 slot      equ 5
 .segment  'boot5'
 .include  'bootrom.inc'
@@ -84,7 +84,7 @@ slot      equ 5
           bootromdefs
 .endscope
 
-.scope    boot6
+.scope
 slot      equ 6
 .segment  'boot6'
 .include  'bootrom.inc'
@@ -92,7 +92,7 @@ slot      equ 6
           bootromdefs
 .endscope
 
-.scope    boot7
+.scope
 slot      equ 7
 .segment  'boot7'
 .include  'bootrom.inc'

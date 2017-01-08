@@ -12,11 +12,8 @@
           ; Here is the boot code
           ; Reads in block 0 into $800 and executes at $801
           sei                 ; No interrupts if booting
-          lda kswh            ; Save IN#
-          pha
           jsr setkbd          ; Reset the hooks
           jsr setvid
-          pla
           ldx #slot*$10+$88
           ldy #slot+$C0
           sty mslot
@@ -59,7 +56,7 @@ ent       lda #nderr          ; Assume wrong drive
           ; Because of this change, revnum became 1.0.1
           cpy #4
           bge rats            ; Branch if bad command
-dos2      ldx #zused          ; Save zp DOS jumps in here
+          ldx #zused          ; Save zp
 zsave     lda command-1,x
           pha
           dex
@@ -138,23 +135,3 @@ pcparms   lda (command),y     ; Get the parms
           cmp #20             ; C = 1 if invalid command
           bcs pccmd           ; Branch if bad command
           bcc doit            ; Always taken
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
-; DOS entry point stuff
-;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-dosent    sty iobpl           ; Store pointer to IOB
-          sta iobph
-          ldy #ibslot         ; Get slot
-          lda (iobpl),y
-          cmp #slot*$10       ; Is it us?
-          beq dosslt
-          jmp rwts+4          ; Back to rwts
-dosslt    ldy #4              ; Command for DOS
-          jsr dos2            ; Go do it and come back
-          beq dosok           ; A = Error code
-          lda #doserr         ; DOS io error code
-dosok     ldy #ibstat
-          sta (iobpl),y       ; Put error code in status
-          rts

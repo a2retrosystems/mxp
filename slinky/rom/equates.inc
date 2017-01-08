@@ -29,21 +29,6 @@ proread   equ 1               ; Read command
 prowr1t   equ 2               ; Write command
 proform   equ 3               ; Format command
 
-; DOS equates
-iobpl     equ $48             ; Pointer to I0B
-iobph     equ $49
-ibslot    equ 1               ; Slot * 16
-ibdrvn    equ 2               ; Drive 1 or 2
-ibtrk     equ 4               ; Track number
-ibsect    equ 5               ; Sector number
-ibbufp    equ 8               ; 8uffer pointer
-ibcmd     equ 12              ; Command
-ibstat    equ 13              ; Status
-doserr    equ $80             ; D0S io error
-dosinit   equ $9D1E           ; DOS init vector use addr-1
-dossyn    equ $A6C4-1         ; DOS syntax error
-rwts      equ $BD00           ; RWTS entry point
-
 ; Error codes
 badcmd    equ $01             ; Bad command
 badpcnt   equ $04             ; Bad parameter count
@@ -102,7 +87,7 @@ rdramrd   equ $C013           ; D7 = 1 if main ram
 rdramwrt  equ $C014
 
 ; Other interface equates
-proflag   equ $BF00           ; 0 = Pascal, $4C = ProDOS, other = DOS
+proflag   equ $BF00           ; 0 = Pascal, $4C = ProDOS
 nameflg   equ $AA             ; Value unused in any catalog
 sizeflg   equ $FC             ; Block size flag
 zers      equ $FD             ; Catalog skip flag
