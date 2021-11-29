@@ -6,40 +6,6 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
-; TESTSIZE - determines ramdisk size nondestructively
-;  Inputs: Y = mslot X = devno
-;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-testsize  lda #0              ; Set address reg
-          sta addrl,x
-          sta addrm,x
-          lda #$10            ; Start at 1 meg and go down
-          sec
-tsloop    sbc #1              ; Move down a bank
-          sta addrh,x
-          lda data,x          ; Save the data that is there
-          pha
-          dec addrl,x         ; Fix address
-          lda #$A5            ; Store something there
-          sta data,x
-          dec addrl,x
-          eor data,x          ; 0 if the data is there
-          dec addrl,x
-          cmp #1              ; C = 0 if data ok
-          pla
-          sta data,x          ; Restore what was there
-          lda addrh,x
-          and #$0F            ; 0nly lower 4 bits valid
-          beq tsnoram         ; No ram somehow!!!
-          bcs tsloop          ; Loop until we find a bank
-          adc #1              ; C = 0 from compare
-tsnoram   sta numbanks,y
-          lsr a               ; Sizetemp = < block count
-          sta sizetemp
-          rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
 ; Format - Tests for powerup and puts catalog on the disk if needed
 ;  Inputs: Y = mslot X = devno
 ;
@@ -68,7 +34,10 @@ format    lda power2,y        ; Is power2 eor powerup = A5
           bne fmnosp
           cmp scrn8,y
 fmnosp    php                 ; Z = 1 if all spaces
-          jsr testsize
+          lda #<megs*$10      ; A meg equals to $10 64K banks
+          sta numbanks,y
+          lsr a               ; Sizetemp = > block count
+          sta sizetemp
           plp
           beq fmtdone
           lda proflag         ; What type of catalog?
@@ -114,7 +83,7 @@ mcbyte    iny
           beq mcfe
           cmp #sizeflg        ; Block size?
           bne mcntsz
-          lda sizetemp        ; Get <# blocks
+          lda sizetemp        ; Get ># blocks
           bne mcntnm          ; Better not be 0
 mcntsz    cmp #nameflg        ; Slot # for name?
           bne mcntnm
@@ -159,7 +128,7 @@ mcdone    rts
 ;  zers,0,0 = all done
 ;  skpfe = fill $FE 0s
 ;  nameflg = replace with ascii slot #
-;  sizeflg = replace with < block size
+;  sizeflg = replace with > block size
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 cattbl

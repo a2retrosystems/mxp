@@ -19,6 +19,7 @@
 .define   asc .byte
 .define   dfb .byte
 .define   dw  .word
+.import   megs
 
 .include  'equates.inc'
 
